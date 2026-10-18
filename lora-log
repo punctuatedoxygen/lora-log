@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Log every LoRa packet the Heltec hears to ~/.local/state/lora/YYYY-MM-DD.jsonl.
+
+One JSON object per line, written and flushed as each packet arrives, so an
+unplug or suspend loses nothing already heard. On connect it also writes a
+"nodedb" snapshot of everything the radio remembers.
+"""
+import json, os, sys, time, threading
+from datetime import datetime
+from pubsub import pub
+import meshtastic.serial_interface
+
+# Set LORA_PORT to a stable /dev/serial/by-id/... path so the radio is found
+# even when it comes back as a different ttyACM number.
+PORT = os.environ.get("LORA_PORT", "/dev/ttyACM0")
+DIR = os.path.expanduser("~/.local/state/lora")
+lost = threading.Event()
+
+def write(rec):
+    rec["logged_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+    path = os.path.join(DIR, datetime.now().strftime("%Y-%m-%d") + ".jsonl")
+    with open(path, "a") as f:
+        f.write(json.dumps(rec, default=str) + "\n")
+
+def on_receive(packet, interface):
+    p = {k: v for k, v in packet.items() if k != "raw"}
+    d = p.get("decoded", {})
+    d.pop("payload", None)
+    write({"type": "packet", **p})
+    print(f"{p.get('fromId')} {d.get('portnum')} snr={p.get('rxSnr')} rssi={p.get('rxRssi')}", flush=True)
+
+pub.subscribe(on_receive, "meshtastic.receive")
+pub.subscribe(lambda interface: lost.set(), "meshtastic.connection.lost")
+
+os.makedirs(DIR, exist_ok=True)
+iface = meshtastic.serial_interface.SerialInterface(devPath=PORT)
+write({"type": "nodedb", "nodes": iface.nodes})
+print(f"connected, radio knows {len(iface.nodes or {})} nodes", flush=True)
+while not lost.wait(60):
+    pass
+print("connection lost", flush=True)
+sys.exit(1)

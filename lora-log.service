@@ -1,0 +1,11 @@
+[Unit]
+Description=Log LoRa (Meshtastic) packets to ~/.local/state/lora
+
+[Service]
+ExecStart=%h/.local/bin/lora-log
+# Environment=LORA_PORT=/dev/serial/by-id/usb-Espressif_...-if00
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=default.target
