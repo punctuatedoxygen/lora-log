@@ -1,0 +1,2 @@
+# raw radio logs hold positions and node lists, never commit them
+*.jsonl
